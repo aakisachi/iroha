@@ -67,14 +67,20 @@ final class IconPainter {
     @discardableResult
     func paint(_ path: String, color: FolderColor) -> Bool {
         let ok = NSWorkspace.shared.setIcon(icon(for: color), forFile: path, options: [])
-        if ok { writeMarker(path, color: color) }
+        if ok {
+            writeMarker(path, color: color)
+            NSWorkspace.shared.noteFileSystemChanged(path) // Finderの表示キャッシュを更新させる
+        }
         return ok
     }
 
     @discardableResult
     func unpaint(_ path: String) -> Bool {
         let ok = NSWorkspace.shared.setIcon(nil, forFile: path, options: [])
-        if ok { removeMarker(path) }
+        if ok {
+            removeMarker(path)
+            NSWorkspace.shared.noteFileSystemChanged(path)
+        }
         return ok
     }
 

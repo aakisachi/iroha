@@ -35,8 +35,10 @@ enum ReconcileEngine {
                 painter.unpaint(path)
                 newPainted.removeValue(forKey: path)
             } else if eff != entry.color {
-                painter.paint(path, color: eff!)
-                newPainted[path] = PaintedEntry(path: path, color: eff!, inode: entry.inode)
+                // 塗りに成功した時だけ台帳を更新（失敗時は次回リトライさせる）
+                if painter.paint(path, color: eff!) {
+                    newPainted[path] = PaintedEntry(path: path, color: eff!, inode: entry.inode)
+                }
             } else if painter.marker(path) == nil {
                 // マーカー導入前に塗ったフォルダへ印を後付け
                 painter.writeMarker(path, color: entry.color)
