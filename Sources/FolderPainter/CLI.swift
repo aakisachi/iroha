@@ -80,6 +80,17 @@ func runCLI(_ args: [String]) -> Int32 {
         reconcileSync()
         print("OK: 塗り直し完了。塗ったフォルダ: \(store.painted.count)個, スキップ: \(store.skipped.count)個")
 
+    case "repaint":
+        // 塗りエンジン更新後などに、台帳の全フォルダを現在の色で強制的に塗り直す
+        var done = 0, failed = 0
+        for entry in store.painted.values {
+            guard isDirectory(entry.path),
+                  let eff = ReconcileEngine.effectiveColor(for: entry.path, rules: store.rules) else { continue }
+            if IconPainter.shared.paint(entry.path, color: eff) { done += 1 } else { failed += 1 }
+        }
+        reconcileSync()
+        print("OK: \(done)個を塗り直しました" + (failed > 0 ? "（失敗: \(failed)個）" : ""))
+
     case "debug-icon" where args.count == 2:
         let p = absolutize(args[1])
         let painter = IconPainter.shared

@@ -6,8 +6,6 @@ import UniformTypeIdentifiers
 final class IconPainter {
     static let shared = IconPainter()
 
-    // macOS標準フォルダアイコン（青系）のおおよその色相（度）。ここからの回転で着色する
-    private let baseHue: CGFloat = 205
     private var cache: [String: NSImage] = [:]
     private let ciContext = CIContext()
 
@@ -23,6 +21,8 @@ final class IconPainter {
         generate(color, size: 256)
     }
 
+    // 標準フォルダアイコンの陰影（明暗）だけを残し、色は選んだ色そのものへマップする。
+    // 旧方式（色相回転）は元の水色の淡さが残りパステル調になってしまった。
     private func generate(_ color: FolderColor, size: CGFloat) -> NSImage {
         let base = NSWorkspace.shared.icon(for: UTType.folder)
         let canvas = NSSize(width: size, height: size)
@@ -31,29 +31,26 @@ final class IconPainter {
         guard let tiff = base.tiffRepresentation,
               let ciInput = CIImage(data: tiff) else { return base }
 
-        let (hue, sat, bri) = color.hsb
         var output = ciInput
 
-        if sat < 0.12 {
-            // 無彩色（グレー・黒・白系）: 彩度を落として明度を寄せる
-            let filter = CIFilter(name: "CIColorControls")!
-            filter.setValue(output, forKey: kCIInputImageKey)
-            filter.setValue(0.0, forKey: kCIInputSaturationKey)
-            filter.setValue((bri - 0.75) * 0.4, forKey: kCIInputBrightnessKey)
-            output = filter.outputImage ?? output
-        } else {
-            let rotate = CIFilter(name: "CIHueAdjust")!
-            rotate.setValue(output, forKey: kCIInputImageKey)
-            rotate.setValue((hue * 360 - baseHue) * .pi / 180, forKey: kCIInputAngleKey)
-            output = rotate.outputImage ?? output
+        // 1) 明暗を持ち上げる（フォルダ本体の輝度を色ランプの「選んだ色」位置に合わせる）
+        let gamma = CIFilter(name: "CIGammaAdjust")!
+        gamma.setValue(output, forKey: kCIInputImageKey)
+        gamma.setValue(0.55, forKey: "inputPower")
+        output = gamma.outputImage ?? output
 
-            // 選んだ色の彩度・明度に寄せる（回転だけだとくすむ）
-            let adjust = CIFilter(name: "CIColorControls")!
-            adjust.setValue(output, forKey: kCIInputImageKey)
-            adjust.setValue(0.5 + sat * 0.85, forKey: kCIInputSaturationKey)
-            adjust.setValue((bri - 0.85) * 0.25, forKey: kCIInputBrightnessKey)
-            output = adjust.outputImage ?? output
+        // 2) 輝度→「暗い選択色 〜 明るい選択色」のグラデーションに写像
+        let c = color.nsColor.usingColorSpace(.sRGB)!
+        func ci(_ scale: CGFloat, mixWhite: CGFloat) -> CIColor {
+            CIColor(red: min(1, c.redComponent * scale + mixWhite),
+                    green: min(1, c.greenComponent * scale + mixWhite),
+                    blue: min(1, c.blueComponent * scale + mixWhite))
         }
+        let falseColor = CIFilter(name: "CIFalseColor")!
+        falseColor.setValue(output, forKey: kCIInputImageKey)
+        falseColor.setValue(ci(0.42, mixWhite: 0), forKey: "inputColor0")   // 陰の色
+        falseColor.setValue(ci(0.88, mixWhite: 0.16), forKey: "inputColor1") // 明るい面の色
+        output = falseColor.outputImage ?? output
 
         guard let cg = ciContext.createCGImage(output, from: output.extent) else { return base }
         return NSImage(cgImage: cg, size: canvas)
